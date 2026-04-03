@@ -28,33 +28,39 @@ caused by cdn-based variability.
 '''
 from scapy.all import sr1, DNS, DNSQR, IP, UDP
 
+DNS_SERVERS = ["8.8.8.8", "1.1.1.1"] #google and cloudflare public dns
+
 def get_trusted_ips(domain):
+    
+    trusted_ips = set()
     
     #build DNS request packet
     
-    packet = IP(dst="8.8.8.8")/UDP(dport=53)/DNS(rd=1, qd=DNSQR(qname=domain))
+    for dns_server in DNS_SERVERS:
     
-    #send packet and wait for response
+        packet = IP(dst=dns_server)/UDP(dport=53)/DNS(rd=1, qd=DNSQR(qname=domain))
     
-    response = sr1(packet, timeout=2, verbose=0)
+        #send packet and wait for response
     
-    trusted_ips = []
+        response = sr1(packet, timeout=2, verbose=0)
+    
+    
     
     #check if we got a response and if it has answers
     
-    if response and response.haslayer(DNS):
+        if response and response.haslayer(DNS):
         
-        dns=response[DNS]
+            dns=response[DNS]
         
-        if dns.ancount > 0:
+            if dns.ancount > 0:
             
-            for i in range(dns.ancount):
+                for i in range(dns.ancount):
                 
-                answer = dns.an[i]
+                    answer = dns.an[i]
                 
-                if answer.type == 1:  # A record
+                    if answer.type == 1:  # A record
                     
-                    trusted_ips.append(answer.rdata)
+                        trusted_ips.add(answer.rdata)
                     
     return trusted_ips
 
