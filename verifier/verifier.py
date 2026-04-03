@@ -58,4 +58,31 @@ def get_trusted_ips(domain):
                     
     return trusted_ips
 
-print(get_trusted_ips("goodreads.com"))
+def verify_ip(domain, observed_ip):
+    
+    expected_ips = get_trusted_ips(domain)
+
+    # safety check
+    if not expected_ips:
+        print(f"[WARNING] Could not verify {domain}")
+        return None
+
+    if observed_ip in expected_ips:
+        print(f"{domain} is legit")
+        return True
+
+    # retry with second verification
+    print(f"suspicious IP {observed_ip} for {domain}. Retrying...")
+
+    expected_ips_retry = get_trusted_ips(domain)
+
+    if not expected_ips_retry:
+        print(f"[WARNING] Retry failed for {domain}")
+        return None
+
+    if observed_ip in expected_ips_retry:
+        print(f"{domain} is legit after retry")
+        return True
+
+    print(f"CONFIRMED SPOOFING for {domain} → {observed_ip}")
+    return False
