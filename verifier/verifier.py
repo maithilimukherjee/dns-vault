@@ -26,3 +26,36 @@ instead of relying on a single verification, the system performs multiple checks
 caused by cdn-based variability.
 
 '''
+from scapy.all import sr1, DNS, DNSQR, IP, UDP
+
+def get_trusted_ips(domain):
+    
+    #build DNS request packet
+    
+    packet = IP(dst="8.8.8.8")/UDP(dport=53)/DNS(rd=1, qd=DNSQR(qname=domain))
+    
+    #send packet and wait for response
+    
+    response = sr1(packet, timeout=2, verbose=0)
+    
+    trusted_ips = []
+    
+    #check if we got a response and if it has answers
+    
+    if response and response.haslayer(DNS):
+        
+        dns=response[DNS]
+        
+        if dns.ancount > 0:
+            
+            for i in range(dns.ancount):
+                
+                answer = dns.an[i]
+                
+                if answer.type == 1:  # A record
+                    
+                    trusted_ips.append(answer.rdata)
+                    
+    return trusted_ips
+
+print(get_trusted_ips("goodreads.com"))
