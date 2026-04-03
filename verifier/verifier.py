@@ -1,92 +1,70 @@
-'''
-how do we decide spoofing vs mismatch?
-
-1. get ALL expected IPs from trusted dns
-2. check if observed IP is inside that set
-
-but:
-even trusted dns can return: different IPs (because CDN, geo, load balancing)
-
-so your system must:
-
-- allow some flexibility
-- not panic instantly
-
-smarter logic (this is advanced thinking)
-
-
-if observed_ip not in expected_ips:
-    mark as suspicious
-    verify again (retry)
-    if still mismatch:
-        confirmed spoof
-
-
-instead of relying on a single verification, the system performs multiple checks to reduce false positives 
-caused by cdn-based variability.
-
-'''
 from scapy.all import sr1, DNS, DNSQR, IP, UDP
 
-DNS_SERVERS = ["8.8.8.8", "1.1.1.1"] #google and cloudflare public dns
+DNS_SERVERS = ["8.8.8.8", "1.1.1.1"]
+
+trusted_pool = {}  # domain -> set of known good IPs
+
 
 def get_trusted_ips(domain):
-    
     trusted_ips = set()
-    
-    #build DNS request packet
-    
+
     for dns_server in DNS_SERVERS:
-    
-        packet = IP(dst=dns_server)/UDP(dport=53)/DNS(rd=1, qd=DNSQR(qname=domain))
-    
-        #send packet and wait for response
-    
+        packet = IP(dst=dns_server) / UDP(dport=53) / DNS(rd=1, qd=DNSQR(qname=domain))
         response = sr1(packet, timeout=2, verbose=0)
-    
-    
-    
-    #check if we got a response and if it has answers
-    
+
         if response and response.haslayer(DNS):
-        
-            dns=response[DNS]
-        
-            if dns.ancount > 0:
-            
-                for i in range(dns.ancount):
-                
-                    answer = dns.an[i]
-                
-                    if answer.type == 1:  # A record
-                    
-                        trusted_ips.add(answer.rdata)
-                    
+            dns = response[DNS]
+
+            for i in range(dns.ancount):
+                answer = dns.an[i]
+
+                if answer.type == 1:  # A record
+                    trusted_ips.add(str(answer.rdata))
+
     return trusted_ips
 
+
 def verify_ip(domain, observed_ip):
-    
+    observed_ip = str(observed_ip)
+
+    # initialize memory
+    if domain not in trusted_pool:
+        trusted_pool[domain] = set()
+
+    first_time = len(trusted_pool[domain]) == 0
+
     expected_ips = get_trusted_ips(domain)
 
-    # safety check
     if not expected_ips:
         print(f"[WARNING] Could not verify {domain}")
-        return None
+        return "UNVERIFIED", 0
 
+    score = 0
+
+    # first contact grace (avoid false positives)
+    if first_time:
+        score += 40
+
+    # previously seen IP
+    if observed_ip in trusted_pool[domain]:
+        score += 60
+
+    # matches live DNS
     if observed_ip in expected_ips:
-        return True
+        score += 40
 
-    # retry with second verification
-    print(f"suspicious IP {observed_ip} for {domain}. Retrying...")
+    # domain familiarity bonus
+    if trusted_pool[domain]:
+        score += 10
 
-    expected_ips_retry = get_trusted_ips(domain)
+    # update memory (VERY IMPORTANT)
+    trusted_pool[domain].add(observed_ip)
+    trusted_pool[domain].update(expected_ips)
 
-    if not expected_ips_retry:
-        print(f"[WARNING] Retry failed for {domain}")
-        return None
-
-    if observed_ip in expected_ips_retry:
-        return True
-
-    print(f"CONFIRMED SPOOFING for {domain} → {observed_ip}")
-    return False
+    # final decision
+    if score >= 80:
+        return "LEGIT", score
+    elif score >= 40:
+        return "SUSPICIOUS", score
+    else:
+        return "HIGHLY SUSPICIOUS", score
