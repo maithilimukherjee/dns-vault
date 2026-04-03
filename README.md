@@ -76,7 +76,7 @@ dns-vault/
 | Condition           | Score |
 | ------------------- | ----- |
 | First time seen     | +40   |
-| Seen before         | +60   |
+| Seen before(ip level)         | +60   |
 | Matches trusted DNS | +40   |
 | Domain seen before  | +10   |
 
