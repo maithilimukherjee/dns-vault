@@ -96,6 +96,48 @@ what each part of the code does:
 - checks if the answer is an A record (ipv4 address)
 
 '''
+'''
+Output analysis:
+
+your nslookup result:
+goodreads.com → 44.215.118.51
+               44.215.119.15
+               44.215.128.96
+               
+my sniffer output:
+[DNS RESPONSE] goodreads.com. -> 44.215.118.51
+[DNS RESPONSE] goodreads.com. -> 44.215.119.15 
+[DNS RESPONSE] goodreads.com. -> 44.215.128.96 
+
+(same 3 ip addresses)
+
+no spoofing here
+
+because:
+local dns result == observed result
+
+so:
+
+no mismatch → no attack
+
+why 3 IPs?
+
+this is:
+
+load balancing (not heavy CDN like google, but still distributed)
+
+goodreads (owned by amazon infra) is:
+giving multiple backend servers
+
+nslookup said: Non-authoritative answer
+
+meaning:
+
+response came from cache/resolver
+not directly from authoritative server
+this is EXACTLY where: cache poisoning attacks happen
+
+'''
 
 
 
