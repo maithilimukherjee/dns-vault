@@ -1,144 +1,71 @@
-
-
-'''
-what it does:
-- listen to network traffic
-- filter for dns packets (port 53)
-- passes packets forward
-
-output:
-raw dns packets
-
-pocket layers: ethernet -> ip -> udp -> dns
-
-- go layer by layer and extract dns
-
-how to identify dns packets:
-
-condition 1: protocol is udp 
-condition 2: destination port is 53
-
-dns has a field caled: QR (query/response flag)
-if QR == 0: it's a query
-if QR == 1: it's a response
-
-process packets only where QR == 1
-
-what to extract from response packets:
-- domain name
-- ip address
-
-example of output:
-- google.com -> 142.250.183.14
-- youtube.com -> 142.250.196.206
-
-'''
 from scapy.all import sniff
 from scapy.layers.dns import DNS
-from scapy.layers.inet import UDP
+from verifier.verifier import verify_ip
 
+MAX_SEEN = 1000  # limit to prevent memory issues
+seen = set()
+verified_cache = {}
 
 def process_packet(packet):
+
+    if not packet.haslayer(DNS):
+        return
     
-    # check if packet has DNS layer
-    if packet.haslayer(DNS):
-        dns = packet[DNS]
+    dns = packet[DNS]
 
-        # check if it's a response
-        if dns.qr == 1:
+    # process only DNS responses with answers
+    if dns.qr != 1 or dns.ancount == 0:
+        return
 
-            # ensure it has answers
-            if dns.ancount > 0:
+    # safety check for query section
+    if not dns.qd or not dns.qd.qname:
+        return
 
-                # extract domain
-                domain = dns.qd.qname.decode()
+    domain = dns.qd.qname.decode().rstrip(".")
 
-                # loop through answers
-                for i in range(dns.ancount):
-                    answer = dns.an[i]
+    for i in range(dns.ancount):
+        answer = dns.an[i]
 
-                    # check if A record
-                    if answer.type == 1:
-                        ip = answer.rdata
+        # only A records
+        if answer.type != 1:
+            continue
 
-                        print(f"[DNS RESPONSE] {domain} -> {ip}")
+        ip = str(answer.rdata)  # normalize to string
+        key = (domain, ip)
+
+        # avoid duplicate processing
+        if key in seen:
+            continue
+
+        seen.add(key)
+        
+        # limit memory usage
+        if len(seen) > MAX_SEEN:
+            seen.clear()
+            verified_cache.clear()
+            print("[INFO] Cache cleared to prevent memory issues")
+
+        print(f"\n[DNS RESPONSE] {domain} -> {ip}")
+
+        # check cache first
+        if key in verified_cache:
+            result = verified_cache[key]
+            print("(cached)", "LEGIT" if result else "SPOOF DETECTED")
+            continue
+
+        # verify
+        result = verify_ip(domain, ip)
+
+        # store result in cache (YOU FORGOT THIS BEFORE 👀)
+        verified_cache[key] = result
+
+        if result is True:
+            print("LEGIT")
+        elif result is False:
+            print("SPOOF DETECTED")
+        else:
+            print("UNVERIFIED")
 
 
 # start sniffing
 sniff(filter="udp port 53", prn=process_packet, store=0)
-
-'''
-what each part of the code does:
-
-1. sniff(filter="udp port 53", prn=process_packet, store=0)
-
-- listens to network traffic
-- filter for udp packets on port 53 (dns)
-- prn=process_packet: sends each packet to our function
-- store=0: don't store packets in memory (we process them on the fly)
-
-2. packet.haslayer(DNS)
-- checks if the packet has a DNS layer
-
-3. dns.qr == 1
-- checks if the packet is a response (qr == 1)
-
-4. dns.ancount
-- number of answers in the dns response
-
-5. dns.qd.qname.
-- domain name being queried (in the question section)
-
-6. dns.an[i]
-- access the i-th answer in the answer section
-
-7. answer.type == 1
-- checks if the answer is an A record (ipv4 address)
-
-'''
-'''
-Output analysis:
-
-your nslookup result:
-goodreads.com → 44.215.118.51
-               44.215.119.15
-               44.215.128.96
-               
-my sniffer output:
-[DNS RESPONSE] goodreads.com. -> 44.215.118.51
-[DNS RESPONSE] goodreads.com. -> 44.215.119.15 
-[DNS RESPONSE] goodreads.com. -> 44.215.128.96 
-
-(same 3 ip addresses)
-
-no spoofing here
-
-because:
-local dns result == observed result
-
-so:
-
-no mismatch → no attack
-
-why 3 IPs?
-
-this is:
-
-load balancing (not heavy CDN like google, but still distributed)
-
-goodreads (owned by amazon infra) is:
-giving multiple backend servers
-
-nslookup said: Non-authoritative answer
-
-meaning:
-
-response came from cache/resolver
-not directly from authoritative server
-this is EXACTLY where: cache poisoning attacks happen
-
-'''
-
-
-
-

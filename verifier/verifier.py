@@ -68,7 +68,6 @@ def verify_ip(domain, observed_ip):
         return None
 
     if observed_ip in expected_ips:
-        print(f"{domain} is legit")
         return True
 
     # retry with second verification
@@ -81,7 +80,6 @@ def verify_ip(domain, observed_ip):
         return None
 
     if observed_ip in expected_ips_retry:
-        print(f"{domain} is legit after retry")
         return True
 
     print(f"CONFIRMED SPOOFING for {domain} → {observed_ip}")
